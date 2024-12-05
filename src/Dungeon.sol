@@ -18,8 +18,8 @@ error IncorrectPaymentAmount();
 contract DungeonMOW is ERC721URIStorage {
     struct LinkedAsset {
         address nftContract; // Address of the NFT contract
-        uint256 tokenId;     // ID of the NFT
-        bool usageGranted;   // Whether usage rights have been granted
+        uint256 tokenId; // ID of the NFT
+        bool usageGranted; // Whether usage rights have been granted
     }
 
     struct Dungeon {
@@ -49,29 +49,13 @@ contract DungeonMOW is ERC721URIStorage {
     // Add a mapping to store the validity period set by each NFT owner for each dungeon
     mapping(address => mapping(uint256 => mapping(uint256 => uint256))) public nftTermsValidity;
 
-    event DungeonCreated(
-        uint256 indexed id,
-        address indexed owner,
-        string metadataURI
-    );
+    event DungeonCreated(uint256 indexed id, address indexed owner, string metadataURI);
 
-    event LinkedAssetAdded(
-        uint256 indexed dungeonId,
-        address indexed nftContract,
-        uint256 indexed tokenId
-    );
+    event LinkedAssetAdded(uint256 indexed dungeonId, address indexed nftContract, uint256 indexed tokenId);
 
-    event ItemImported(
-        address indexed nftContract,
-        uint256 indexed tokenId,
-        address indexed player
-    );
+    event ItemImported(address indexed nftContract, uint256 indexed tokenId, address indexed player);
 
-    event ItemExported(
-        address indexed nftContract,
-        uint256 indexed tokenId,
-        address indexed player
-    );
+    event ItemExported(address indexed nftContract, uint256 indexed tokenId, address indexed player);
 
     event ItemMovedBetweenDungeons(
         uint256 indexed fromDungeonId,
@@ -92,11 +76,7 @@ contract DungeonMOW is ERC721URIStorage {
         _safeMint(msg.sender, tokenId);
         _setTokenURI(tokenId, metadataURI);
 
-        _dungeons[tokenId] = Dungeon({
-            id: tokenId,
-            owner: msg.sender,
-            metadataURI: metadataURI
-        });
+        _dungeons[tokenId] = Dungeon({id: tokenId, owner: msg.sender, metadataURI: metadataURI});
 
         emit DungeonCreated(tokenId, msg.sender, metadataURI);
     }
@@ -107,11 +87,7 @@ contract DungeonMOW is ERC721URIStorage {
      * @param nftContract Address of the NFT contract.
      * @param tokenId ID of the linked NFT.
      */
-    function addLinkedAsset(
-        uint256 dungeonId,
-        address nftContract,
-        uint256 tokenId
-    ) external payable {
+    function addLinkedAsset(uint256 dungeonId, address nftContract, uint256 tokenId) external payable {
         if (ownerOf(dungeonId) != msg.sender) revert NotDungeonOwner();
 
         IERC721 nft = IERC721(nftContract);
@@ -131,11 +107,9 @@ contract DungeonMOW is ERC721URIStorage {
         payable(itemOwner).transfer(msg.value);
 
         // Store the linked asset in the new mapping
-        _dungeonLinkedAssets[dungeonId].push(LinkedAsset({
-            nftContract: nftContract,
-            tokenId: tokenId,
-            usageGranted: true
-        }));
+        _dungeonLinkedAssets[dungeonId].push(
+            LinkedAsset({nftContract: nftContract, tokenId: tokenId, usageGranted: true})
+        );
 
         emit LinkedAssetAdded(dungeonId, nftContract, tokenId);
     }
@@ -147,9 +121,11 @@ contract DungeonMOW is ERC721URIStorage {
      * @param tokenId ID of the NFT to import.
      */
     function importItem(uint256 dungeonId, address nftContract, uint256 tokenId) public {
-        if (ownerOf(dungeonId) != msg.sender) revert NotDungeonOwner();
-        
-        IERC721(nftContract).transferFrom(msg.sender, address(this), tokenId);
+        // Add check to ensure caller owns the NFT
+        IERC721 nft = IERC721(nftContract);
+        if (nft.ownerOf(tokenId) != msg.sender) revert NotItemOwner();
+
+        nft.transferFrom(msg.sender, address(this), tokenId);
         dungeonTokenOwners[dungeonId][nftContract][tokenId] = msg.sender;
         emit ItemImported(nftContract, tokenId, msg.sender);
     }
@@ -162,7 +138,7 @@ contract DungeonMOW is ERC721URIStorage {
      */
     function exportItem(uint256 dungeonId, address nftContract, uint256 tokenId) public {
         if (dungeonTokenOwners[dungeonId][nftContract][tokenId] != msg.sender) revert NotItemOwner();
-        
+
         delete dungeonTokenOwners[dungeonId][nftContract][tokenId]; // Clear ownership before transfer
         IERC721(nftContract).transferFrom(address(this), msg.sender, tokenId);
         emit ItemExported(nftContract, tokenId, msg.sender);
@@ -184,12 +160,9 @@ contract DungeonMOW is ERC721URIStorage {
      * @param nftContract Address of the NFT contract.
      * @param tokenId ID of the NFT to move.
      */
-    function moveItemBetweenDungeons(
-        uint256 fromDungeonId,
-        uint256 toDungeonId,
-        address nftContract,
-        uint256 tokenId
-    ) external {
+    function moveItemBetweenDungeons(uint256 fromDungeonId, uint256 toDungeonId, address nftContract, uint256 tokenId)
+        external
+    {
         if (dungeonTokenOwners[fromDungeonId][nftContract][tokenId] != msg.sender) revert NotItemOwner();
         if (ownerOf(toDungeonId) != msg.sender) revert NotDungeonOwner();
 
@@ -203,12 +176,7 @@ contract DungeonMOW is ERC721URIStorage {
     }
 
     // Function for NFT owners to set the linking charge for a specific dungeon
-    function setLinkingCharge(
-        address nftContract,
-        uint256 tokenId,
-        uint256 dungeonId,
-        uint256 charge
-    ) external {
+    function setLinkingCharge(address nftContract, uint256 tokenId, uint256 dungeonId, uint256 charge) external {
         IERC721 nft = IERC721(nftContract);
         if (nft.ownerOf(tokenId) != msg.sender) revert NotItemOwner();
         nftLinkingCharges[nftContract][tokenId][dungeonId] = charge;
@@ -229,14 +197,19 @@ contract DungeonMOW is ERC721URIStorage {
         console.log("entered 227");
 
         // Generate the terms string
-        string memory terms = string(abi.encodePacked(
-            "I, the owner of NFT at contract address ", nftContract, 
-            ", hereby grant permission to the owner of Dungeon NFT with ID ", dungeonId,
-            ", to display my NFT within their dungeon. In exchange, the dungeon owner agrees to pay me ",
-            nftLinkingCharges[nftContract][tokenId][dungeonId], 
-            " wei. This agreement is valid until ", validityPeriod, 
-            " seconds from the time of signing."
-        ));
+        string memory terms = string(
+            abi.encodePacked(
+                "I, the owner of NFT at contract address ",
+                nftContract,
+                ", hereby grant permission to the owner of Dungeon NFT with ID ",
+                dungeonId,
+                ", to display my NFT within their dungeon. In exchange, the dungeon owner agrees to pay me ",
+                nftLinkingCharges[nftContract][tokenId][dungeonId],
+                " wei. This agreement is valid until ",
+                validityPeriod,
+                " seconds from the time of signing."
+            )
+        );
 
         // Store the hash of the terms, the timestamp, and the validity period
         bytes32 termsHash = keccak256(abi.encodePacked(terms));
