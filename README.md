@@ -1,66 +1,7 @@
-## Foundry
+# Dungeon
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+This project implements a blockchain-based dungeon game system. It uses Foundry and OpenZeppelin contracts. At its core, it's built around the DungeonMOW contract. You can find it in [src/Dungeon.sol](src/Dungeon.sol). This contract allows players to create, own, and manage dungeons as NFTs.
 
-Foundry consists of:
+The system features a unique linking mechanism. Players can import other NFTs, like swords, potions, or character items, into their dungeons. It has a sophisticated permission system. This system maintains original ownership while allowing dungeon integration.
 
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
-
-## Documentation
-
-https://book.getfoundry.sh/
-
-## Usage
-
-### Build
-
-```shell
-$ forge build
-```
-
-### Test
-
-```shell
-$ forge test
-```
-
-### Format
-
-```shell
-$ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+The contract implements ERC721 standards. It includes features for setting linking charges. It also manages terms of use and transfers dungeon ownership.
