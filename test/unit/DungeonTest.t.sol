@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {Test, console} from "../lib/forge-std/src/Test.sol";
-import {DeployDungeonMOW} from "../script/DeployDungeonMOW.s.sol";
-import {DungeonMOW} from "../src/Dungeon.sol";
-import {Nft1} from "../src/sampleNfts/Nft1.sol";
-import {Nft2} from "../src/sampleNfts/Nft2.sol";
-import {Potion} from "../src/sampleNfts/Potion.sol";
-import {Sword} from "../src/sampleNfts/Sword.sol";
+import {Test, console} from "../../lib/forge-std/src/Test.sol";
+import {DeployDungeonMOW} from "../../script/DeployDungeonMOW.s.sol";
+import {DungeonMOW} from "../../src/Dungeon.sol";
+import {Nft1} from "../../src/sampleNfts/Nft1.sol";
+import {Nft2} from "../../src/sampleNfts/Nft2.sol";
+import {Potion} from "../../src/sampleNfts/Potion.sol";
+import {Sword} from "../../src/sampleNfts/Sword.sol";
 
 contract DungeonTest is Test {
     DungeonMOW dungeonMOW;

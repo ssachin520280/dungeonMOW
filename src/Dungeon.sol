@@ -21,7 +21,7 @@ contract DungeonMOW is ERC721URIStorage {
     struct LinkedAsset {
         address nftContract; // Address of the NFT contract
         uint256 tokenId; // ID of the NFT
-        bool usageGranted; // Whether usage rights have been granted
+        // can also keep the metadata uri of NFT explicitly here
     }
 
     struct Dungeon {
@@ -36,6 +36,7 @@ contract DungeonMOW is ERC721URIStorage {
     // New mapping to store linked assets for each dungeon
     mapping(uint256 => LinkedAsset[]) private _dungeonLinkedAssets;
 
+    // [NFTContract][tokenId][dungeonId]
     // Mapping to track imported movable NFTs for each dungeon
     mapping(uint256 => mapping(address => mapping(uint256 => address))) public dungeonTokenOwners;
 
@@ -50,6 +51,9 @@ contract DungeonMOW is ERC721URIStorage {
 
     // Add a mapping to store the validity period set by each NFT owner for each dungeon
     mapping(address => mapping(uint256 => mapping(uint256 => uint256))) public nftTermsValidity;
+
+    // Add a mapping to store transaction hashes of NFT for each dungeon
+    mapping(address => mapping(uint256 => mapping(uint256 => bytes32))) public nftTxHashes;
 
     event DungeonCreated(uint256 indexed id, address indexed owner, string metadataURI);
 
@@ -101,17 +105,27 @@ contract DungeonMOW is ERC721URIStorage {
         uint256 signedTimestamp = nftTermsTimestamps[nftContract][tokenId][dungeonId];
         uint256 validityPeriod = nftTermsValidity[nftContract][tokenId][dungeonId];
         if (storedHash == bytes32(0)) revert TermsNotSigned();
-        if (block.timestamp > signedTimestamp + validityPeriod) revert TermsExpired();
+        if (block.timestamp > signedTimestamp + validityPeriod) {
+            delete nftTermsHashes[nftContract][tokenId][dungeonId];
+            delete nftTermsTimestamps[nftContract][tokenId][dungeonId];
+            delete nftTermsValidity[nftContract][tokenId][dungeonId];
+            revert TermsExpired();
+        }
 
         // Ensure payment matches the charge set by the NFT owner
         uint256 charge = nftLinkingCharges[nftContract][tokenId][dungeonId];
         if (msg.value != charge) revert IncorrectPaymentAmount();
         payable(itemOwner).transfer(msg.value);
 
-        // Store the linked asset in the new mapping
+        // Store the linked asset with the transaction hash
         _dungeonLinkedAssets[dungeonId].push(
-            LinkedAsset({nftContract: nftContract, tokenId: tokenId, usageGranted: true})
+            LinkedAsset({
+                nftContract: nftContract,
+                tokenId: tokenId
+            })
         );
+
+        nftTxHashes[nftContract][tokenId][dungeonId] = blockhash(block.number - 1); // todo: check if the transaction hash is correctly generated
 
         emit LinkedAssetAdded(dungeonId, nftContract, tokenId);
     }
@@ -216,5 +230,19 @@ contract DungeonMOW is ERC721URIStorage {
 
         // Console logs
         console.log("Terms signed for NFT contract: %s", nftContract);
+    }
+
+    /**
+     * @dev Check if an NFT is linked to a dungeon with valid transaction.
+     * @param dungeonId ID of the dungeon map.
+     * @param nftContract Address of the NFT contract.
+     * @param tokenId ID of the NFT.
+     * @return ans True if the NFT is linked and terms are valid.
+     */
+    function isNFTLinked(uint256 dungeonId, address nftContract, uint256 tokenId) public view returns (bool ans) {
+        bytes32 transactionHash = nftTxHashes[nftContract][tokenId][dungeonId];
+        if (transactionHash != bytes32(0)) {
+            ans = true;
+        }
     }
 }
