@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {Test} from "../lib/forge-std/src/Test.sol";
+import {Test, console} from "../lib/forge-std/src/Test.sol";
 import {DeployDungeonMOW} from "../script/DeployDungeonMOW.s.sol";
-import {DungeonMOW, NotDungeonOwner, NFTDoesNotExist, DungeonDoesNotExist, NotItemOwner, TermsNotSigned, TermsExpired, IncorrectPaymentAmount} from "../src/Dungeon.sol";
+import {DungeonMOW} from "../src/Dungeon.sol";
 import {Nft1} from "../src/sampleNfts/Nft1.sol";
 import {Nft2} from "../src/sampleNfts/Nft2.sol";
 import {Potion} from "../src/sampleNfts/Potion.sol";
@@ -21,6 +21,7 @@ contract DungeonTest is Test {
     uint256 potionId;
 
     address public USER = makeAddr("user");
+    address public USER2 = makeAddr("user2");
     address public NFT1_OWNER = makeAddr("nft1Owner");
     address public NFT2_OWNER = makeAddr("nft2Owner");
     address public SWORD_OWNER = makeAddr("swordOwner");
@@ -54,7 +55,7 @@ contract DungeonTest is Test {
         dungeonMOW.createDungeon(metadataURI);
 
         DungeonMOW.Dungeon memory dungeon = dungeonMOW.getDungeon(0);
-        assertEq(dungeon.owner, USER);
+        assertEq(dungeonMOW.ownerOf(dungeon.id), USER);
         assertEq(dungeon.metadataURI, metadataURI);
     }
 
@@ -116,15 +117,11 @@ contract DungeonTest is Test {
         vm.prank(USER);
         dungeonMOW.createDungeon(metadataURI);
 
-        // Give sword to USER
-        vm.prank(SWORD_OWNER);
-        sword.transferFrom(SWORD_OWNER, USER, swordId);
-
         // Verify initial ownership
-        assertEq(sword.ownerOf(swordId), USER);
+        assertEq(sword.ownerOf(swordId), SWORD_OWNER);
 
         // Approve and import sword
-        vm.startPrank(USER);
+        vm.startPrank(SWORD_OWNER);
         sword.approve(address(dungeonMOW), swordId);
         dungeonMOW.importItem(dungeonId, address(sword), swordId);
         vm.stopPrank();
@@ -133,7 +130,7 @@ contract DungeonTest is Test {
         // 1. Dungeon contract owns the NFT
         // 2. SWORD_OWNER has actual ownership of the NFT
         assertEq(sword.ownerOf(swordId), address(dungeonMOW));
-        assertEq(dungeonMOW.dungeonTokenOwners(dungeonId, address(sword), swordId), USER);
+        assertEq(dungeonMOW.dungeonTokenOwners(dungeonId, address(sword), swordId), SWORD_OWNER);
     }
 
     function testExportItem() public {
@@ -163,22 +160,7 @@ contract DungeonTest is Test {
         assertEq(dungeonMOW.dungeonTokenOwners(dungeonId, address(sword), swordId), address(0));
     }
 
-    function testFailImportItemNotOwner() public {
-        string memory metadataURI = "ipfs://example";
-        uint256 dungeonId = 0;
-
-        vm.prank(USER);
-        dungeonMOW.createDungeon(metadataURI);
-
-        // Try to import sword without owning it
-        vm.startPrank(USER);
-        sword.approve(address(dungeonMOW), swordId);
-        vm.expectRevert("ERC721: transfer from incorrect owner");
-        dungeonMOW.importItem(dungeonId, address(sword), swordId);
-        vm.stopPrank();
-    }
-
-    function testFailExportItemNotOwner() public {
+    function testExportItemNotOwner() public {
         string memory metadataURI = "ipfs://example";
         uint256 dungeonId = 0;
 
@@ -196,11 +178,11 @@ contract DungeonTest is Test {
 
         // Try to export sword as different user
         vm.prank(SWORD_OWNER);
-        vm.expectRevert(NotItemOwner.selector);
+        vm.expectRevert(DungeonMOW.NotItemOwner.selector);
         dungeonMOW.exportItem(dungeonId, address(sword), swordId);
     }
 
-    function testFailMoveItemBetweenDungeonsNotOwner() public {
+    function testMoveItemBetweenDungeonsNotOwner() public {
         string memory metadataURI = "ipfs://example";
         uint256 dungeonId1 = 0;
         uint256 dungeonId2 = 1;
@@ -222,11 +204,11 @@ contract DungeonTest is Test {
 
         // Try to move sword as different user
         vm.prank(SWORD_OWNER);
-        vm.expectRevert(NotItemOwner.selector);
+        vm.expectRevert(DungeonMOW.NotItemOwner.selector);
         dungeonMOW.moveItemBetweenDungeons(dungeonId1, dungeonId2, address(sword), swordId);
     }
 
-    function testFailAddLinkedAssetIncorrectPayment() public {
+    function testAddLinkedAssetIncorrectPayment() public {
         string memory metadataURI = "ipfs://example";
         uint256 dungeonId = 0;
         uint256 charge = 0.5 ether;
@@ -241,9 +223,8 @@ contract DungeonTest is Test {
         vm.stopPrank();
 
         // Try to add linked asset with incorrect payment
-        vm.deal(USER, charge);
-        vm.prank(USER);
-        // vm.expectRevert(IncorrectPaymentAmount.selector);
+        hoax(USER, charge);
+        vm.expectRevert(DungeonMOW.IncorrectPaymentAmount.selector);
         dungeonMOW.addLinkedAsset{value: charge - 0.1 ether}(dungeonId, address(nft1), nft1Id);
     }
 
@@ -277,5 +258,68 @@ contract DungeonTest is Test {
         assertEq(sword.ownerOf(swordId), address(dungeonMOW));
         assertEq(dungeonMOW.dungeonTokenOwners(dungeonId1, address(sword), swordId), address(0));
         assertEq(dungeonMOW.dungeonTokenOwners(dungeonId2, address(sword), swordId), SWORD_OWNER);
+    }
+
+    function testTransferDungeonOwnership() public {
+        // Setup
+        string memory metadataURI = "ipfs://example";
+        uint256 dungeonId = 0;
+
+        // Create dungeon as USER
+        vm.prank(USER);
+        dungeonMOW.createDungeon(metadataURI);
+
+        // Verify initial ownership
+        assertEq(dungeonMOW.ownerOf(dungeonId), USER);
+
+        // Transfer ownership to USER2
+        vm.prank(USER);
+        dungeonMOW.transferFrom(USER, USER2, dungeonId);
+
+        // Verify new ownership
+        assertEq(dungeonMOW.ownerOf(dungeonId), USER2);
+    }
+
+    function testTransferDungeonOwnershipNotOwner() public {
+        // Setup
+        string memory metadataURI = "ipfs://example";
+        uint256 dungeonId = 0;
+
+        // Create dungeon as USER
+        vm.prank(USER);
+        dungeonMOW.createDungeon(metadataURI);
+
+        // Try to transfer ownership from USER2 (who doesn't own it)
+        vm.prank(USER2);
+        vm.expectRevert();
+        dungeonMOW.transferFrom(USER2, USER, dungeonId);
+    }
+
+    function testTransferDungeonWithImportedItems() public {
+        // Setup
+        string memory metadataURI = "ipfs://example";
+        uint256 dungeonId = 0;
+
+        // Create dungeon
+        vm.prank(USER);
+        dungeonMOW.createDungeon(metadataURI);
+
+        // Import sword to dungeon
+        vm.startPrank(SWORD_OWNER);
+        sword.approve(address(dungeonMOW), swordId);
+        dungeonMOW.importItem(dungeonId, address(sword), swordId);
+        vm.stopPrank();
+
+        // Transfer dungeon ownership
+        vm.prank(USER);
+        dungeonMOW.transferFrom(USER, USER2, dungeonId);
+
+        // Verify:
+        // 1. Dungeon ownership transferred
+        // 2. Imported items remain in dungeon
+        // 3. Original item owner still maintains item ownership rights
+        assertEq(dungeonMOW.ownerOf(dungeonId), USER2);
+        assertEq(sword.ownerOf(swordId), address(dungeonMOW));
+        assertEq(dungeonMOW.dungeonTokenOwners(dungeonId, address(sword), swordId), SWORD_OWNER);
     }
 }

@@ -7,15 +7,17 @@ import {ERC721} from "../lib/openzeppelin-contracts/contracts/token/ERC721/ERC72
 import {console} from "../lib/forge-std/src/console.sol";
 
 // At the top of the contract, add custom errors
-error NotDungeonOwner();
-error NFTDoesNotExist();
-error DungeonDoesNotExist();
-error NotItemOwner();
-error TermsNotSigned();
-error TermsExpired();
-error IncorrectPaymentAmount();
 
 contract DungeonMOW is ERC721URIStorage {
+
+    error NotDungeonOwner();
+    error NFTDoesNotExist();
+    error DungeonDoesNotExist();
+    error NotItemOwner();
+    error TermsNotSigned();
+    error TermsExpired();
+    error IncorrectPaymentAmount();
+
     struct LinkedAsset {
         address nftContract; // Address of the NFT contract
         uint256 tokenId; // ID of the NFT
@@ -24,7 +26,7 @@ contract DungeonMOW is ERC721URIStorage {
 
     struct Dungeon {
         uint256 id;
-        address owner;
+        // Can add other onchain metadata here
         string metadataURI; // Points to metadata storage
     }
 
@@ -76,7 +78,7 @@ contract DungeonMOW is ERC721URIStorage {
         _safeMint(msg.sender, tokenId);
         _setTokenURI(tokenId, metadataURI);
 
-        _dungeons[tokenId] = Dungeon({id: tokenId, owner: msg.sender, metadataURI: metadataURI});
+        _dungeons[tokenId] = Dungeon({id: tokenId, metadataURI: metadataURI});
 
         emit DungeonCreated(tokenId, msg.sender, metadataURI);
     }
@@ -164,7 +166,6 @@ contract DungeonMOW is ERC721URIStorage {
         external
     {
         if (dungeonTokenOwners[fromDungeonId][nftContract][tokenId] != msg.sender) revert NotItemOwner();
-        if (ownerOf(toDungeonId) != msg.sender) revert NotDungeonOwner();
 
         // Remove the NFT from the source dungeon
         delete dungeonTokenOwners[fromDungeonId][nftContract][tokenId];
@@ -189,12 +190,8 @@ contract DungeonMOW is ERC721URIStorage {
         uint256 dungeonId,
         uint256 validityPeriod // in seconds
     ) external {
-        console.log("entered");
-        console.log("dhgfhg");
         IERC721 nft = IERC721(nftContract);
-        console.log(nft.ownerOf(tokenId));
         if (nft.ownerOf(tokenId) != msg.sender) revert NotItemOwner();
-        console.log("entered 227");
 
         // Generate the terms string
         string memory terms = string(

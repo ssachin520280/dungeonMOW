@@ -1,1 +1,0 @@
-Movable (sword for eg) NFT will not be in the ownership of the dungeon owner but dungeon contract only.
