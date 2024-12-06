@@ -10,6 +10,7 @@ import {console} from "../lib/forge-std/src/console.sol";
 
 contract DungeonMOW is ERC721URIStorage {
 
+    error DungeonAlreadyExists();
     error NotDungeonOwner();
     error NFTDoesNotExist();
     error DungeonDoesNotExist();
@@ -32,6 +33,7 @@ contract DungeonMOW is ERC721URIStorage {
 
     uint256 private _nextTokenId;
     mapping(uint256 => Dungeon) private _dungeons;
+    mapping(bytes32 => bool) private dungeonCreated;
 
     // New mapping to store linked assets for each dungeon
     mapping(uint256 => LinkedAsset[]) private _dungeonLinkedAssets;
@@ -78,7 +80,12 @@ contract DungeonMOW is ERC721URIStorage {
      * @param metadataURI URI pointing to metadata (e.g., IPFS/Arweave).
      */
     function createDungeon(string memory metadataURI) external {
+        //Check if Same Dungeon already exists
+        bytes32 dungeonMetadata = keccak256(abi.encode(metadataURI));
+        if (dungeonCreated[dungeonMetadata]) revert DungeonAlreadyExists();
+
         uint256 tokenId = _nextTokenId++;
+        dungeonCreated[dungeonMetadata] = true;
         _safeMint(msg.sender, tokenId);
         _setTokenURI(tokenId, metadataURI);
 
@@ -137,6 +144,8 @@ contract DungeonMOW is ERC721URIStorage {
      * @param tokenId ID of the NFT to import.
      */
     function importItem(uint256 dungeonId, address nftContract, uint256 tokenId) public {
+        //Check if Dungeon exists
+        if (ownerOf(dungeonId) == address(0)) revert NFTDoesNotExist();
         // Add check to ensure caller owns the NFT
         IERC721 nft = IERC721(nftContract);
         if (nft.ownerOf(tokenId) != msg.sender) revert NotItemOwner();

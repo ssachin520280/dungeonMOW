@@ -59,6 +59,20 @@ contract DungeonTest is Test {
         assertEq(dungeon.metadataURI, metadataURI);
     }
 
+    function testCreateSameDungeon() public {
+        string memory metadataURI = "ipfs://example";
+        vm.startPrank(USER);
+        dungeonMOW.createDungeon(metadataURI);
+        
+        DungeonMOW.Dungeon memory dungeon = dungeonMOW.getDungeon(0);
+        assertEq(dungeonMOW.ownerOf(dungeon.id), USER);
+        assertEq(dungeon.metadataURI, metadataURI);
+
+        vm.expectRevert(DungeonMOW.DungeonAlreadyExists.selector);
+        dungeonMOW.createDungeon(metadataURI);
+        vm.stopPrank();
+    }
+
     function testSetLinkingCharge() public {
         uint256 dungeonId = 0;
         uint256 charge = 0.5 ether;
@@ -183,14 +197,15 @@ contract DungeonTest is Test {
     }
 
     function testMoveItemBetweenDungeonsNotOwner() public {
-        string memory metadataURI = "ipfs://example";
+        string memory metadataURI1 = "ipfs://example1";
+        string memory metadataURI2 = "ipfs://example2";
         uint256 dungeonId1 = 0;
         uint256 dungeonId2 = 1;
 
         // Create dungeons
         vm.startPrank(USER);
-        dungeonMOW.createDungeon(metadataURI);
-        dungeonMOW.createDungeon(metadataURI);
+        dungeonMOW.createDungeon(metadataURI1);
+        dungeonMOW.createDungeon(metadataURI2);
         vm.stopPrank();
 
         // Import sword to first dungeon
@@ -230,14 +245,15 @@ contract DungeonTest is Test {
 
     function testMoveItemBetweenDungeons() public {
         // Setup
-        string memory metadataURI = "ipfs://example";
+        string memory metadataURI1 = "ipfs://example1";
+        string memory metadataURI2 = "ipfs://example2";
         uint256 dungeonId1 = 0;
         uint256 dungeonId2 = 1;
 
         // Create dungeons
         vm.startPrank(USER);
-        dungeonMOW.createDungeon(metadataURI);
-        dungeonMOW.createDungeon(metadataURI);
+        dungeonMOW.createDungeon(metadataURI1);
+        dungeonMOW.createDungeon(metadataURI2);
         vm.stopPrank();
 
         vm.startPrank(SWORD_OWNER);
