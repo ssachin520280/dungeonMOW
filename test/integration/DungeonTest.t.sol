@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.28;
+pragma solidity ^0.8.26;
 
 import {Test, console} from "../../lib/forge-std/src/Test.sol";
 import {DeployDungeonMOW} from "../../script/DeployDungeonMOW.s.sol";
