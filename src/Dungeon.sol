@@ -19,7 +19,7 @@ contract DungeonMOW is ERC721URIStorage {
     error TermsExpired();
     error IncorrectPaymentAmount();
 
-    struct LinkedAsset {
+    struct Asset {
         address nftContract; // Address of the NFT contract
         uint256 tokenId; // ID of the NFT
         // can also keep the metadata uri of NFT explicitly here
@@ -33,15 +33,18 @@ contract DungeonMOW is ERC721URIStorage {
 
     uint256 private _nextTokenId;
     mapping(uint256 => Dungeon) private _dungeons;
-    mapping(bytes32 => bool) private dungeonCreated;
+    mapping(bytes32 => bool) private _dungeonCreated;
+
+    // New mapping to store movable assets for each dungeon
+    mapping(uint256 => Asset[]) private _dungeonMovableAssets;
 
     // New mapping to store linked assets for each dungeon
-    mapping(uint256 => LinkedAsset[]) private _dungeonLinkedAssets;
+    mapping(uint256 => Asset[]) private _dungeonLinkedAssets;
+
+    // Mapping to track actual owners of imported movable NFTs for each dungeon
+    mapping(address => mapping(uint256 => mapping(uint256 => address))) public dungeonTokenOwners;
 
     // [NFTContract][tokenId][dungeonId]
-    // Mapping to track imported movable NFTs for each dungeon
-    mapping(uint256 => mapping(address => mapping(uint256 => address))) public dungeonTokenOwners;
-
     // Add a mapping to store the linking charge set by each NFT owner for each dungeon
     mapping(address => mapping(uint256 => mapping(uint256 => uint256))) public nftLinkingCharges;
 
@@ -82,10 +85,10 @@ contract DungeonMOW is ERC721URIStorage {
     function createDungeon(string memory metadataURI) external {
         //Check if Same Dungeon already exists
         bytes32 dungeonMetadata = keccak256(abi.encode(metadataURI));
-        if (dungeonCreated[dungeonMetadata]) revert DungeonAlreadyExists();
+        if (_dungeonCreated[dungeonMetadata]) revert DungeonAlreadyExists();
 
         uint256 tokenId = _nextTokenId++;
-        dungeonCreated[dungeonMetadata] = true;
+        _dungeonCreated[dungeonMetadata] = true;
         _safeMint(msg.sender, tokenId);
         _setTokenURI(tokenId, metadataURI);
 
@@ -126,7 +129,7 @@ contract DungeonMOW is ERC721URIStorage {
 
         // Store the linked asset with the transaction hash
         _dungeonLinkedAssets[dungeonId].push(
-            LinkedAsset({
+            Asset({
                 nftContract: nftContract,
                 tokenId: tokenId
             })
@@ -144,14 +147,23 @@ contract DungeonMOW is ERC721URIStorage {
      * @param tokenId ID of the NFT to import.
      */
     function importItem(uint256 dungeonId, address nftContract, uint256 tokenId) public {
-        //Check if Dungeon exists
+        // Check if Dungeon exists
         if (ownerOf(dungeonId) == address(0)) revert NFTDoesNotExist();
         // Add check to ensure caller owns the NFT
         IERC721 nft = IERC721(nftContract);
         if (nft.ownerOf(tokenId) != msg.sender) revert NotItemOwner();
 
         nft.transferFrom(msg.sender, address(this), tokenId);
-        dungeonTokenOwners[dungeonId][nftContract][tokenId] = msg.sender;
+        dungeonTokenOwners[nftContract][tokenId][dungeonId] = msg.sender;
+
+        // Add the item to the movable assets array
+        _dungeonMovableAssets[dungeonId].push(
+            Asset({
+                nftContract: nftContract,
+                tokenId: tokenId
+            })
+        );
+
         emit ItemImported(nftContract, tokenId, msg.sender);
     }
 
@@ -162,9 +174,19 @@ contract DungeonMOW is ERC721URIStorage {
      * @param tokenId ID of the NFT to export.
      */
     function exportItem(uint256 dungeonId, address nftContract, uint256 tokenId) public {
-        if (dungeonTokenOwners[dungeonId][nftContract][tokenId] != msg.sender) revert NotItemOwner();
+        if (dungeonTokenOwners[nftContract][tokenId][dungeonId] != msg.sender) revert NotItemOwner();
 
-        delete dungeonTokenOwners[dungeonId][nftContract][tokenId]; // Clear ownership before transfer
+        // Remove the asset from the movable assets array
+        Asset[] storage assets = _dungeonMovableAssets[dungeonId];
+        for (uint256 i = 0; i < assets.length; i++) {
+            if (assets[i].nftContract == nftContract && assets[i].tokenId == tokenId) {
+                assets[i] = assets[assets.length - 1]; // Move the last element to the current index
+                assets.pop(); // Remove the last element
+                break;
+            }
+        }
+
+        delete dungeonTokenOwners[nftContract][tokenId][dungeonId]; // Clear ownership before transfer
         IERC721(nftContract).transferFrom(address(this), msg.sender, tokenId);
         emit ItemExported(nftContract, tokenId, msg.sender);
     }
@@ -188,13 +210,13 @@ contract DungeonMOW is ERC721URIStorage {
     function moveItemBetweenDungeons(uint256 fromDungeonId, uint256 toDungeonId, address nftContract, uint256 tokenId)
         external
     {
-        if (dungeonTokenOwners[fromDungeonId][nftContract][tokenId] != msg.sender) revert NotItemOwner();
+        if (dungeonTokenOwners[nftContract][tokenId][fromDungeonId] != msg.sender) revert NotItemOwner();
 
         // Remove the NFT from the source dungeon
-        delete dungeonTokenOwners[fromDungeonId][nftContract][tokenId];
+        delete dungeonTokenOwners[nftContract][tokenId][fromDungeonId];
 
         // Add the NFT to the destination dungeon
-        dungeonTokenOwners[toDungeonId][nftContract][tokenId] = msg.sender;
+        dungeonTokenOwners[nftContract][tokenId][toDungeonId] = msg.sender;
 
         emit ItemMovedBetweenDungeons(fromDungeonId, toDungeonId, nftContract, tokenId, msg.sender);
     }
@@ -253,5 +275,53 @@ contract DungeonMOW is ERC721URIStorage {
         if (transactionHash != bytes32(0)) {
             ans = true;
         }
+    }
+
+    /**
+     * @dev Get movable assets for a specific dungeon.
+     * @param dungeonId ID of the dungeon.
+     * @return assets Array of movable assets.
+     */
+    function getMovableAssets(uint256 dungeonId) external view returns (Asset[] memory assets) {
+        return _dungeonMovableAssets[dungeonId];
+    }
+
+    /**
+     * @dev Get linked assets for a specific dungeon.
+     * @param dungeonId ID of the dungeon.
+     * @return assets Array of linked assets.
+     */
+    function getLinkedAssets(uint256 dungeonId) external view returns (Asset[] memory assets) {
+        return _dungeonLinkedAssets[dungeonId];
+    }
+
+    /**
+     * @dev Get details of a specific dungeon.
+     * @param dungeonId ID of the dungeon.
+     * @return dungeon Details of the dungeon.
+     */
+    function getDungeonDetails(uint256 dungeonId) external view returns (Dungeon memory dungeon) {
+        if (ownerOf(dungeonId) == address(0)) revert DungeonDoesNotExist();
+        return _dungeons[dungeonId];
+    }
+
+    /**
+     * @dev Get details of all available dungeons.
+     * @return dungeons Array of all available dungeons.
+     */
+    function getAllDungeons() external view returns (Dungeon[] memory dungeons) {
+        uint256 totalDungeons = _nextTokenId;
+        dungeons = new Dungeon[](totalDungeons);
+        uint256 index = 0;
+
+        for (uint256 i = 0; i < totalDungeons; i++) {
+            if (ownerOf(i) != address(0)) {
+                dungeons[index] = _dungeons[i];
+                index++;
+            }
+        }
+
+        // Resize the array to fit the actual number of dungeons
+        assembly { mstore(dungeons, index) }
     }
 }
