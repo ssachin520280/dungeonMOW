@@ -2,13 +2,12 @@
 pragma solidity ^0.8.28;
 
 import {IERC721} from "../lib/openzeppelin-contracts/contracts/token/ERC721/IERC721.sol";
-import {ERC721URIStorage} from "../lib/openzeppelin-contracts/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import {ERC721} from "../lib/openzeppelin-contracts/contracts/token/ERC721/ERC721.sol";
 import {console} from "../lib/forge-std/src/console.sol";
 
 // At the top of the contract, add custom errors
 
-contract DungeonMOW is ERC721URIStorage {
+contract DungeonMOW is ERC721 {
 
     error DungeonAlreadyExists();
     error NotDungeonOwner();
@@ -25,10 +24,14 @@ contract DungeonMOW is ERC721URIStorage {
         // can also keep the metadata uri of NFT explicitly here
     }
 
+    struct DungeonMetadata {
+        string mapHash;    // Hash of the map JSON
+        string dbUrl;      // URL of the database
+    }
+
     struct Dungeon {
         uint256 id;
-        // Can add other onchain metadata here
-        string metadataURI; // Points to metadata storage
+        DungeonMetadata metadata;  // On-chain metadata
     }
 
     uint256 private _nextTokenId;
@@ -41,6 +44,7 @@ contract DungeonMOW is ERC721URIStorage {
     // New mapping to store linked assets for each dungeon
     mapping(uint256 => Asset[]) private _dungeonLinkedAssets;
 
+    // [NFTContract][tokenId][dungeonId]
     // Mapping to track actual owners of imported movable NFTs for each dungeon
     mapping(address => mapping(uint256 => mapping(uint256 => address))) public dungeonTokenOwners;
 
@@ -60,7 +64,12 @@ contract DungeonMOW is ERC721URIStorage {
     // Add a mapping to store transaction hashes of NFT for each dungeon
     mapping(address => mapping(uint256 => mapping(uint256 => bytes32))) public nftTxHashes;
 
-    event DungeonCreated(uint256 indexed id, address indexed owner, string metadataURI);
+    event DungeonCreated(
+        uint256 indexed id, 
+        address indexed owner, 
+        string mapHash, 
+        string dbUrl
+    );
 
     event LinkedAssetAdded(uint256 indexed dungeonId, address indexed nftContract, uint256 indexed tokenId);
 
@@ -79,22 +88,45 @@ contract DungeonMOW is ERC721URIStorage {
     constructor() ERC721("DungeonMOW", "DGM") {}
 
     /**
-     * @dev Create a new dungeon MOW.
-     * @param metadataURI URI pointing to metadata (e.g., IPFS/Arweave).
+     * @dev Create a new dungeon MOW with on-chain metadata.
+     * @param mapHash Hash of the map JSON.
+     * @param dbUrl URL of the database.
      */
-    function createDungeon(string memory metadataURI) external {
-        //Check if Same Dungeon already exists
-        bytes32 dungeonMetadata = keccak256(abi.encode(metadataURI));
+    function createDungeon(string memory mapHash, string memory dbUrl) external {
+        bytes32 dungeonMetadata = keccak256(abi.encode(mapHash, dbUrl));
         if (_dungeonCreated[dungeonMetadata]) revert DungeonAlreadyExists();
 
         uint256 tokenId = _nextTokenId++;
         _dungeonCreated[dungeonMetadata] = true;
         _safeMint(msg.sender, tokenId);
-        _setTokenURI(tokenId, metadataURI);
 
-        _dungeons[tokenId] = Dungeon({id: tokenId, metadataURI: metadataURI});
+        _dungeons[tokenId] = Dungeon({
+            id: tokenId,
+            metadata: DungeonMetadata({
+                mapHash: mapHash,
+                dbUrl: dbUrl
+            })
+        });
 
-        emit DungeonCreated(tokenId, msg.sender, metadataURI);
+        emit DungeonCreated(tokenId, msg.sender, mapHash, dbUrl);
+    }
+
+    /**
+     * @dev Get the metadata for a specific token
+     * @param tokenId The ID of the token
+     */
+    function tokenURI(uint256 tokenId) public view override returns (string memory) {
+        if (_nextTokenId <= tokenId) revert NFTDoesNotExist();
+        if (ownerOf(tokenId) == address(0)) revert NFTDoesNotExist();
+
+        // You could optionally format this as a proper JSON string if needed
+        return string(abi.encodePacked(
+            '{"mapHash":"', 
+            _dungeons[tokenId].metadata.mapHash,
+            '","dbUrl":"',
+            _dungeons[tokenId].metadata.dbUrl,
+            '"}'
+        ));
     }
 
     /**
@@ -192,7 +224,7 @@ contract DungeonMOW is ERC721URIStorage {
     }
 
     /**
-     * @dev Get Dungeon details.
+     * @dev Get Dungeon details including on-chain metadata.
      * @param dungeonId ID of the dungeon map.
      */
     function getDungeon(uint256 dungeonId) external view returns (Dungeon memory) {
@@ -298,9 +330,8 @@ contract DungeonMOW is ERC721URIStorage {
     /**
      * @dev Get details of a specific dungeon.
      * @param dungeonId ID of the dungeon.
-     * @return dungeon Details of the dungeon.
      */
-    function getDungeonDetails(uint256 dungeonId) external view returns (Dungeon memory dungeon) {
+    function getDungeonDetails(uint256 dungeonId) external view returns (Dungeon memory) {
         if (ownerOf(dungeonId) == address(0)) revert DungeonDoesNotExist();
         return _dungeons[dungeonId];
     }

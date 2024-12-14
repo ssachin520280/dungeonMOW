@@ -51,12 +51,13 @@ contract DungeonIntegrationTest is Test {
 
     function testIntegrationCreateDungeonAndImportItems() public {
         // Setup
-        string memory metadataURI = "ipfs://example";
+        string memory mapHash = "QmHash123";
+        string memory dbUrl = "https://example.com/db";
         uint256 dungeonId = 0;
 
         // 1. Create dungeon
         vm.prank(USER);
-        dungeonMOW.createDungeon(metadataURI);
+        dungeonMOW.createDungeon(mapHash, dbUrl);
 
         // 2. Import sword
         vm.startPrank(SWORD_OWNER);
@@ -74,20 +75,21 @@ contract DungeonIntegrationTest is Test {
         assertEq(dungeonMOW.ownerOf(dungeonId), USER);
         assertEq(sword.ownerOf(swordId), address(dungeonMOW));
         assertEq(potion.ownerOf(potionId), address(dungeonMOW));
-        assertEq(dungeonMOW.dungeonTokenOwners(dungeonId, address(sword), swordId), SWORD_OWNER);
-        assertEq(dungeonMOW.dungeonTokenOwners(dungeonId, address(potion), potionId), POTION_OWNER);
+        assertEq(dungeonMOW.dungeonTokenOwners(address(sword), swordId, dungeonId), SWORD_OWNER);
+        assertEq(dungeonMOW.dungeonTokenOwners(address(potion), potionId, dungeonId), POTION_OWNER);
     }
 
     function testIntegrationLinkNFTWithPayment() public {
         // Setup
-        string memory metadataURI = "ipfs://example";
+        string memory mapHash = "QmHash123";
+        string memory dbUrl = "https://example.com/db";
         uint256 dungeonId = 0;
         uint256 charge = 0.5 ether;
         uint256 validityPeriod = 7200;
 
         // 1. Create dungeon
         vm.prank(USER);
-        dungeonMOW.createDungeon(metadataURI);
+        dungeonMOW.createDungeon(mapHash, dbUrl);
 
         // 2. NFT owner sets up linking terms
         vm.startPrank(NFT1_OWNER);
@@ -110,14 +112,15 @@ contract DungeonIntegrationTest is Test {
 
     function testIntegrationTransferDungeonWithAssetsAndLinks() public {
         // Setup
-        string memory metadataURI = "ipfs://example";
+        string memory mapHash = "QmHash123";
+        string memory dbUrl = "https://example.com/db";
         uint256 dungeonId = 0;
         uint256 charge = 0.5 ether;
         uint256 validityPeriod = 7200;
 
         // 1. Create dungeon
         vm.prank(USER);
-        dungeonMOW.createDungeon(metadataURI);
+        dungeonMOW.createDungeon(mapHash, dbUrl);
 
         // 2. Import sword
         vm.startPrank(SWORD_OWNER);
@@ -142,7 +145,7 @@ contract DungeonIntegrationTest is Test {
         // Verify final state
         assertEq(dungeonMOW.ownerOf(dungeonId), USER2);
         assertEq(sword.ownerOf(swordId), address(dungeonMOW));
-        assertEq(dungeonMOW.dungeonTokenOwners(dungeonId, address(sword), swordId), SWORD_OWNER);
+        assertEq(dungeonMOW.dungeonTokenOwners(address(sword), swordId, dungeonId), SWORD_OWNER);
         assertTrue(dungeonMOW.isNFTLinked(dungeonId, address(nft1), nft1Id));
     }
 }
