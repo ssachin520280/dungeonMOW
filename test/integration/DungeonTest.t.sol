@@ -148,4 +148,41 @@ contract DungeonIntegrationTest is Test {
         assertEq(dungeonMOW.dungeonTokenOwners(address(sword), swordId, dungeonId), SWORD_OWNER);
         assertTrue(dungeonMOW.isNFTLinked(dungeonId, address(nft1), nft1Id));
     }
+
+    function testIntegrationListAndPurchaseDungeonWithAssets() public {
+        // Setup
+        string memory mapHash = "QmHash123";
+        string memory dbUrl = "https://example.com/db";
+        uint256 dungeonId = 0;
+        uint256 price = 1 ether;
+
+        // 1. Create dungeon
+        vm.prank(USER);
+        dungeonMOW.createDungeon(mapHash, dbUrl);
+
+        // 2. Import sword
+        vm.startPrank(SWORD_OWNER);
+        sword.approve(address(dungeonMOW), swordId);
+        dungeonMOW.importItem(dungeonId, address(sword), swordId);
+        vm.stopPrank();
+
+        // 3. List dungeon for sale
+        vm.prank(USER);
+        dungeonMOW.listDungeonForSale(dungeonId, price);
+
+        // Record initial balances
+        uint256 initialSellerBalance = USER.balance;
+
+        // 4. Purchase dungeon
+        vm.deal(USER2, price);
+        vm.prank(USER2);
+        dungeonMOW.purchaseDungeon{value: price}(dungeonId);
+
+        // Verify final state
+        assertEq(dungeonMOW.ownerOf(dungeonId), USER2);
+        assertEq(USER.balance, initialSellerBalance + price);
+        assertEq(dungeonMOW.getDungeonListingPrice(dungeonId), 0);
+        assertEq(sword.ownerOf(swordId), address(dungeonMOW));
+        assertEq(dungeonMOW.dungeonTokenOwners(address(sword), swordId, dungeonId), SWORD_OWNER);
+    }
 }

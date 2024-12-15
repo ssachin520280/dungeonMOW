@@ -16,6 +16,9 @@ contract DungeonMOW is ERC721 {
     error TermsNotSigned();
     error TermsExpired();
     error IncorrectPaymentAmount();
+    error DungeonNotListed();
+    error DungeonAlreadyListed();
+    error PriceMustBeGreaterThanZero();
 
     struct Asset {
         address nftContract; // Address of the NFT contract
@@ -69,6 +72,9 @@ contract DungeonMOW is ERC721 {
     mapping(address => mapping(uint256 => mapping(uint256 => bytes32)))
         public nftTxHashes;
 
+    // Add a mapping to store listing prices
+    mapping(uint256 => uint256) private _dungeonListings; // dungeonId => price
+
     event DungeonCreated(
         uint256 indexed id,
         address indexed owner,
@@ -102,6 +108,9 @@ contract DungeonMOW is ERC721 {
         address player
     );
 
+    event DungeonListed(uint256 indexed dungeonId, uint256 price);
+    event DungeonSold(uint256 indexed dungeonId, address indexed seller, address indexed buyer, uint256 price);
+
     constructor() ERC721("DungeonMOW", "DGM") {}
 
     /**
@@ -129,8 +138,8 @@ contract DungeonMOW is ERC721 {
     }
 
     function deleteDungeon(uint256 dungeonId) external {
-        // Check if caller is the owner
         if (ownerOf(dungeonId) != msg.sender) revert NotDungeonOwner();
+        if (_dungeonListings[dungeonId] != 0) revert DungeonAlreadyListed();
 
         // Get all movable assets
         Asset[] memory movableAssets = _dungeonMovableAssets[dungeonId];
@@ -460,5 +469,63 @@ contract DungeonMOW is ERC721 {
         assembly {
             mstore(dungeons, index)
         }
+    }
+
+    /**
+     * @dev List a dungeon for sale
+     * @param dungeonId The ID of the dungeon to list
+     * @param price The price in wei
+     */
+    function listDungeonForSale(uint256 dungeonId, uint256 price) external {
+        if (ownerOf(dungeonId) != msg.sender) revert NotDungeonOwner();
+        if (price == 0) revert PriceMustBeGreaterThanZero();
+        if (_dungeonListings[dungeonId] != 0) revert DungeonAlreadyListed();
+
+        _dungeonListings[dungeonId] = price;
+        emit DungeonListed(dungeonId, price);
+    }
+
+    /**
+     * @dev Cancel a dungeon listing
+     * @param dungeonId The ID of the dungeon to delist
+     */
+    function cancelDungeonListing(uint256 dungeonId) external {
+        if (ownerOf(dungeonId) != msg.sender) revert NotDungeonOwner();
+        if (_dungeonListings[dungeonId] == 0) revert DungeonNotListed();
+
+        delete _dungeonListings[dungeonId];
+        emit DungeonListed(dungeonId, 0);
+    }
+
+    /**
+     * @dev Purchase a listed dungeon
+     * @param dungeonId The ID of the dungeon to purchase
+     */
+    function purchaseDungeon(uint256 dungeonId) external payable {
+        uint256 listingPrice = _dungeonListings[dungeonId];
+        if (listingPrice == 0) revert DungeonNotListed();
+        if (msg.value != listingPrice) revert IncorrectPaymentAmount();
+
+        address seller = ownerOf(dungeonId);
+        
+        // Clear the listing
+        delete _dungeonListings[dungeonId];
+        
+        // Transfer the NFT
+        _transfer(seller, msg.sender, dungeonId);
+        
+        // Transfer the payment
+        payable(seller).transfer(msg.value);
+
+        emit DungeonSold(dungeonId, seller, msg.sender, listingPrice);
+    }
+
+    /**
+     * @dev Get the listing price of a dungeon
+     * @param dungeonId The ID of the dungeon
+     * @return price The listing price (0 if not listed)
+     */
+    function getDungeonListingPrice(uint256 dungeonId) external view returns (uint256) {
+        return _dungeonListings[dungeonId];
     }
 }

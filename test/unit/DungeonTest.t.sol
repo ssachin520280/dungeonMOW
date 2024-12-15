@@ -475,4 +475,112 @@ contract DungeonTest is Test {
         vm.expectRevert(DungeonMOW.NotDungeonOwner.selector);
         dungeonMOW.deleteDungeon(dungeonId);
     }
+
+    function testListDungeonForSale() public {
+        // Setup
+        string memory mapHash = "QmHash123";
+        string memory dbUrl = "https://example.com/db";
+        uint256 dungeonId = 0;
+        uint256 price = 1 ether;
+
+        // Create dungeon
+        vm.prank(USER);
+        dungeonMOW.createDungeon(mapHash, dbUrl);
+
+        // List dungeon
+        vm.prank(USER);
+        dungeonMOW.listDungeonForSale(dungeonId, price);
+
+        assertEq(dungeonMOW.getDungeonListingPrice(dungeonId), price);
+    }
+
+    function testListDungeonForSaleNotOwner() public {
+        string memory mapHash = "QmHash123";
+        string memory dbUrl = "https://example.com/db";
+        uint256 dungeonId = 0;
+        uint256 price = 1 ether;
+
+        vm.prank(USER);
+        dungeonMOW.createDungeon(mapHash, dbUrl);
+
+        vm.prank(USER2);
+        vm.expectRevert(DungeonMOW.NotDungeonOwner.selector);
+        dungeonMOW.listDungeonForSale(dungeonId, price);
+    }
+
+    function testListDungeonForSaleZeroPrice() public {
+        string memory mapHash = "QmHash123";
+        string memory dbUrl = "https://example.com/db";
+        uint256 dungeonId = 0;
+        uint256 price = 0;
+
+        vm.prank(USER);
+        dungeonMOW.createDungeon(mapHash, dbUrl);
+
+        vm.prank(USER);
+        vm.expectRevert(DungeonMOW.PriceMustBeGreaterThanZero.selector);
+        dungeonMOW.listDungeonForSale(dungeonId, price);
+    }
+
+    function testCancelDungeonListing() public {
+        string memory mapHash = "QmHash123";
+        string memory dbUrl = "https://example.com/db";
+        uint256 dungeonId = 0;
+        uint256 price = 1 ether;
+
+        vm.prank(USER);
+        dungeonMOW.createDungeon(mapHash, dbUrl);
+
+        vm.startPrank(USER);
+        dungeonMOW.listDungeonForSale(dungeonId, price);
+        dungeonMOW.cancelDungeonListing(dungeonId);
+        vm.stopPrank();
+
+        assertEq(dungeonMOW.getDungeonListingPrice(dungeonId), 0);
+    }
+
+    function testPurchaseDungeon() public {
+        string memory mapHash = "QmHash123";
+        string memory dbUrl = "https://example.com/db";
+        uint256 dungeonId = 0;
+        uint256 price = 1 ether;
+
+        // Create and list dungeon
+        vm.prank(USER);
+        dungeonMOW.createDungeon(mapHash, dbUrl);
+
+        vm.prank(USER);
+        dungeonMOW.listDungeonForSale(dungeonId, price);
+
+        // Record initial balance
+        uint256 initialSellerBalance = USER.balance;
+
+        // Purchase dungeon
+        vm.deal(USER2, price);
+        vm.prank(USER2);
+        dungeonMOW.purchaseDungeon{value: price}(dungeonId);
+
+        // Verify final state
+        assertEq(dungeonMOW.ownerOf(dungeonId), USER2);
+        assertEq(USER.balance, initialSellerBalance + price);
+        assertEq(dungeonMOW.getDungeonListingPrice(dungeonId), 0);
+    }
+
+    function testPurchaseDungeonIncorrectPrice() public {
+        string memory mapHash = "QmHash123";
+        string memory dbUrl = "https://example.com/db";
+        uint256 dungeonId = 0;
+        uint256 price = 1 ether;
+
+        vm.prank(USER);
+        dungeonMOW.createDungeon(mapHash, dbUrl);
+
+        vm.prank(USER);
+        dungeonMOW.listDungeonForSale(dungeonId, price);
+
+        vm.deal(USER2, price);
+        vm.prank(USER2);
+        vm.expectRevert(DungeonMOW.IncorrectPaymentAmount.selector);
+        dungeonMOW.purchaseDungeon{value: price - 0.1 ether}(dungeonId);
+    }
 }
