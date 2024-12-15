@@ -8,7 +8,6 @@ import {console} from "../lib/forge-std/src/console.sol";
 // At the top of the contract, add custom errors
 
 contract DungeonMOW is ERC721 {
-
     error DungeonAlreadyExists();
     error NotDungeonOwner();
     error NFTDoesNotExist();
@@ -25,13 +24,13 @@ contract DungeonMOW is ERC721 {
     }
 
     struct DungeonMetadata {
-        string mapHash;    // Hash of the map JSON
-        string dbUrl;      // URL of the database
+        string mapHash; // Hash of the map JSON
+        string dbUrl; // URL of the database
     }
 
     struct Dungeon {
         uint256 id;
-        DungeonMetadata metadata;  // On-chain metadata
+        DungeonMetadata metadata; // On-chain metadata
     }
 
     uint256 private _nextTokenId;
@@ -46,36 +45,54 @@ contract DungeonMOW is ERC721 {
 
     // [NFTContract][tokenId][dungeonId]
     // Mapping to track actual owners of imported movable NFTs for each dungeon
-    mapping(address => mapping(uint256 => mapping(uint256 => address))) public dungeonTokenOwners;
+    mapping(address => mapping(uint256 => mapping(uint256 => address)))
+        public dungeonTokenOwners;
 
     // [NFTContract][tokenId][dungeonId]
     // Add a mapping to store the linking charge set by each NFT owner for each dungeon
-    mapping(address => mapping(uint256 => mapping(uint256 => uint256))) public nftLinkingCharges;
+    mapping(address => mapping(uint256 => mapping(uint256 => uint256)))
+        public nftLinkingCharges;
 
     // Add a mapping to store signed terms by NFT owners for each dungeon
-    mapping(address => mapping(uint256 => mapping(uint256 => bytes32))) public nftTermsHashes;
+    mapping(address => mapping(uint256 => mapping(uint256 => bytes32)))
+        public nftTermsHashes;
 
     // Add a mapping to store the timestamp when terms were signed
-    mapping(address => mapping(uint256 => mapping(uint256 => uint256))) public nftTermsTimestamps;
+    mapping(address => mapping(uint256 => mapping(uint256 => uint256)))
+        public nftTermsTimestamps;
 
     // Add a mapping to store the validity period set by each NFT owner for each dungeon
-    mapping(address => mapping(uint256 => mapping(uint256 => uint256))) public nftTermsValidity;
+    mapping(address => mapping(uint256 => mapping(uint256 => uint256)))
+        public nftTermsValidity;
 
     // Add a mapping to store transaction hashes of NFT for each dungeon
-    mapping(address => mapping(uint256 => mapping(uint256 => bytes32))) public nftTxHashes;
+    mapping(address => mapping(uint256 => mapping(uint256 => bytes32)))
+        public nftTxHashes;
 
     event DungeonCreated(
-        uint256 indexed id, 
-        address indexed owner, 
-        string mapHash, 
+        uint256 indexed id,
+        address indexed owner,
+        string mapHash,
         string dbUrl
     );
 
-    event LinkedAssetAdded(uint256 indexed dungeonId, address indexed nftContract, uint256 indexed tokenId);
+    event LinkedAssetAdded(
+        uint256 indexed dungeonId,
+        address indexed nftContract,
+        uint256 indexed tokenId
+    );
 
-    event ItemImported(address indexed nftContract, uint256 indexed tokenId, address indexed player);
+    event ItemImported(
+        address indexed nftContract,
+        uint256 indexed tokenId,
+        address indexed player
+    );
 
-    event ItemExported(address indexed nftContract, uint256 indexed tokenId, address indexed player);
+    event ItemExported(
+        address indexed nftContract,
+        uint256 indexed tokenId,
+        address indexed player
+    );
 
     event ItemMovedBetweenDungeons(
         uint256 indexed fromDungeonId,
@@ -92,7 +109,10 @@ contract DungeonMOW is ERC721 {
      * @param mapHash Hash of the map JSON.
      * @param dbUrl URL of the database.
      */
-    function createDungeon(string memory mapHash, string memory dbUrl) external {
+    function createDungeon(
+        string memory mapHash,
+        string memory dbUrl
+    ) external {
         bytes32 dungeonMetadata = keccak256(abi.encode(mapHash, dbUrl));
         if (_dungeonCreated[dungeonMetadata]) revert DungeonAlreadyExists();
 
@@ -102,31 +122,66 @@ contract DungeonMOW is ERC721 {
 
         _dungeons[tokenId] = Dungeon({
             id: tokenId,
-            metadata: DungeonMetadata({
-                mapHash: mapHash,
-                dbUrl: dbUrl
-            })
+            metadata: DungeonMetadata({mapHash: mapHash, dbUrl: dbUrl})
         });
 
         emit DungeonCreated(tokenId, msg.sender, mapHash, dbUrl);
+    }
+
+    function deleteDungeon(uint256 dungeonId) external {
+        // Check if caller is the owner
+        if (ownerOf(dungeonId) != msg.sender) revert NotDungeonOwner();
+
+        // Get all movable assets
+        Asset[] memory movableAssets = _dungeonMovableAssets[dungeonId];
+
+        // Return all imported items to their original owners
+        for (uint256 i = 0; i < movableAssets.length; i++) {
+            address originalOwner = dungeonTokenOwners[
+                movableAssets[i].nftContract
+            ][movableAssets[i].tokenId][dungeonId];
+            if (originalOwner != address(0)) {
+                IERC721(movableAssets[i].nftContract).transferFrom(
+                    address(this),
+                    originalOwner,
+                    movableAssets[i].tokenId
+                );
+                delete dungeonTokenOwners[movableAssets[i].nftContract][
+                    movableAssets[i].tokenId
+                ][dungeonId];
+            }
+        }
+
+        // Clean up dungeon data
+        delete _dungeons[dungeonId];
+        delete _dungeonMovableAssets[dungeonId];
+        delete _dungeonLinkedAssets[dungeonId];
+
+        // Burn the NFT
+        _burn(dungeonId);
     }
 
     /**
      * @dev Get the metadata for a specific token
      * @param tokenId The ID of the token
      */
-    function tokenURI(uint256 tokenId) public view override returns (string memory) {
+    function tokenURI(
+        uint256 tokenId
+    ) public view override returns (string memory) {
         if (_nextTokenId <= tokenId) revert NFTDoesNotExist();
         if (ownerOf(tokenId) == address(0)) revert NFTDoesNotExist();
 
         // You could optionally format this as a proper JSON string if needed
-        return string(abi.encodePacked(
-            '{"mapHash":"', 
-            _dungeons[tokenId].metadata.mapHash,
-            '","dbUrl":"',
-            _dungeons[tokenId].metadata.dbUrl,
-            '"}'
-        ));
+        return
+            string(
+                abi.encodePacked(
+                    '{"mapHash":"',
+                    _dungeons[tokenId].metadata.mapHash,
+                    '","dbUrl":"',
+                    _dungeons[tokenId].metadata.dbUrl,
+                    '"}'
+                )
+            );
     }
 
     /**
@@ -135,7 +190,11 @@ contract DungeonMOW is ERC721 {
      * @param nftContract Address of the NFT contract.
      * @param tokenId ID of the linked NFT.
      */
-    function addLinkedAsset(uint256 dungeonId, address nftContract, uint256 tokenId) external payable {
+    function addLinkedAsset(
+        uint256 dungeonId,
+        address nftContract,
+        uint256 tokenId
+    ) external payable {
         if (ownerOf(dungeonId) != msg.sender) revert NotDungeonOwner();
 
         IERC721 nft = IERC721(nftContract);
@@ -144,8 +203,12 @@ contract DungeonMOW is ERC721 {
 
         // Check if terms are signed and valid
         bytes32 storedHash = nftTermsHashes[nftContract][tokenId][dungeonId];
-        uint256 signedTimestamp = nftTermsTimestamps[nftContract][tokenId][dungeonId];
-        uint256 validityPeriod = nftTermsValidity[nftContract][tokenId][dungeonId];
+        uint256 signedTimestamp = nftTermsTimestamps[nftContract][tokenId][
+            dungeonId
+        ];
+        uint256 validityPeriod = nftTermsValidity[nftContract][tokenId][
+            dungeonId
+        ];
         if (storedHash == bytes32(0)) revert TermsNotSigned();
         if (block.timestamp > signedTimestamp + validityPeriod) {
             delete nftTermsHashes[nftContract][tokenId][dungeonId];
@@ -161,13 +224,12 @@ contract DungeonMOW is ERC721 {
 
         // Store the linked asset with the transaction hash
         _dungeonLinkedAssets[dungeonId].push(
-            Asset({
-                nftContract: nftContract,
-                tokenId: tokenId
-            })
+            Asset({nftContract: nftContract, tokenId: tokenId})
         );
 
-        nftTxHashes[nftContract][tokenId][dungeonId] = blockhash(block.number - 1); // todo: check if the transaction hash is correctly generated
+        nftTxHashes[nftContract][tokenId][dungeonId] = blockhash(
+            block.number - 1
+        ); // todo: check if the transaction hash is correctly generated
 
         emit LinkedAssetAdded(dungeonId, nftContract, tokenId);
     }
@@ -178,7 +240,11 @@ contract DungeonMOW is ERC721 {
      * @param nftContract Address of the NFT contract.
      * @param tokenId ID of the NFT to import.
      */
-    function importItem(uint256 dungeonId, address nftContract, uint256 tokenId) public {
+    function importItem(
+        uint256 dungeonId,
+        address nftContract,
+        uint256 tokenId
+    ) public {
         // Check if Dungeon exists
         if (ownerOf(dungeonId) == address(0)) revert NFTDoesNotExist();
         // Add check to ensure caller owns the NFT
@@ -190,10 +256,7 @@ contract DungeonMOW is ERC721 {
 
         // Add the item to the movable assets array
         _dungeonMovableAssets[dungeonId].push(
-            Asset({
-                nftContract: nftContract,
-                tokenId: tokenId
-            })
+            Asset({nftContract: nftContract, tokenId: tokenId})
         );
 
         emit ItemImported(nftContract, tokenId, msg.sender);
@@ -205,13 +268,21 @@ contract DungeonMOW is ERC721 {
      * @param nftContract Address of the NFT contract.
      * @param tokenId ID of the NFT to export.
      */
-    function exportItem(uint256 dungeonId, address nftContract, uint256 tokenId) public {
-        if (dungeonTokenOwners[nftContract][tokenId][dungeonId] != msg.sender) revert NotItemOwner();
+    function exportItem(
+        uint256 dungeonId,
+        address nftContract,
+        uint256 tokenId
+    ) public {
+        if (dungeonTokenOwners[nftContract][tokenId][dungeonId] != msg.sender)
+            revert NotItemOwner();
 
         // Remove the asset from the movable assets array
         Asset[] storage assets = _dungeonMovableAssets[dungeonId];
         for (uint256 i = 0; i < assets.length; i++) {
-            if (assets[i].nftContract == nftContract && assets[i].tokenId == tokenId) {
+            if (
+                assets[i].nftContract == nftContract &&
+                assets[i].tokenId == tokenId
+            ) {
                 assets[i] = assets[assets.length - 1]; // Move the last element to the current index
                 assets.pop(); // Remove the last element
                 break;
@@ -227,7 +298,9 @@ contract DungeonMOW is ERC721 {
      * @dev Get Dungeon details including on-chain metadata.
      * @param dungeonId ID of the dungeon map.
      */
-    function getDungeon(uint256 dungeonId) external view returns (Dungeon memory) {
+    function getDungeon(
+        uint256 dungeonId
+    ) external view returns (Dungeon memory) {
         if (ownerOf(dungeonId) == address(0)) revert DungeonDoesNotExist();
         return _dungeons[dungeonId];
     }
@@ -239,10 +312,16 @@ contract DungeonMOW is ERC721 {
      * @param nftContract Address of the NFT contract.
      * @param tokenId ID of the NFT to move.
      */
-    function moveItemBetweenDungeons(uint256 fromDungeonId, uint256 toDungeonId, address nftContract, uint256 tokenId)
-        external
-    {
-        if (dungeonTokenOwners[nftContract][tokenId][fromDungeonId] != msg.sender) revert NotItemOwner();
+    function moveItemBetweenDungeons(
+        uint256 fromDungeonId,
+        uint256 toDungeonId,
+        address nftContract,
+        uint256 tokenId
+    ) external {
+        if (
+            dungeonTokenOwners[nftContract][tokenId][fromDungeonId] !=
+            msg.sender
+        ) revert NotItemOwner();
 
         // Remove the NFT from the source dungeon
         delete dungeonTokenOwners[nftContract][tokenId][fromDungeonId];
@@ -250,11 +329,22 @@ contract DungeonMOW is ERC721 {
         // Add the NFT to the destination dungeon
         dungeonTokenOwners[nftContract][tokenId][toDungeonId] = msg.sender;
 
-        emit ItemMovedBetweenDungeons(fromDungeonId, toDungeonId, nftContract, tokenId, msg.sender);
+        emit ItemMovedBetweenDungeons(
+            fromDungeonId,
+            toDungeonId,
+            nftContract,
+            tokenId,
+            msg.sender
+        );
     }
 
     // Function for NFT owners to set the linking charge for a specific dungeon
-    function setLinkingCharge(address nftContract, uint256 tokenId, uint256 dungeonId, uint256 charge) external {
+    function setLinkingCharge(
+        address nftContract,
+        uint256 tokenId,
+        uint256 dungeonId,
+        uint256 charge
+    ) external {
         IERC721 nft = IERC721(nftContract);
         if (nft.ownerOf(tokenId) != msg.sender) revert NotItemOwner();
         nftLinkingCharges[nftContract][tokenId][dungeonId] = charge;
@@ -302,7 +392,11 @@ contract DungeonMOW is ERC721 {
      * @param tokenId ID of the NFT.
      * @return ans True if the NFT is linked and terms are valid.
      */
-    function isNFTLinked(uint256 dungeonId, address nftContract, uint256 tokenId) public view returns (bool ans) {
+    function isNFTLinked(
+        uint256 dungeonId,
+        address nftContract,
+        uint256 tokenId
+    ) public view returns (bool ans) {
         bytes32 transactionHash = nftTxHashes[nftContract][tokenId][dungeonId];
         if (transactionHash != bytes32(0)) {
             ans = true;
@@ -314,7 +408,9 @@ contract DungeonMOW is ERC721 {
      * @param dungeonId ID of the dungeon.
      * @return assets Array of movable assets.
      */
-    function getMovableAssets(uint256 dungeonId) external view returns (Asset[] memory assets) {
+    function getMovableAssets(
+        uint256 dungeonId
+    ) external view returns (Asset[] memory assets) {
         return _dungeonMovableAssets[dungeonId];
     }
 
@@ -323,7 +419,9 @@ contract DungeonMOW is ERC721 {
      * @param dungeonId ID of the dungeon.
      * @return assets Array of linked assets.
      */
-    function getLinkedAssets(uint256 dungeonId) external view returns (Asset[] memory assets) {
+    function getLinkedAssets(
+        uint256 dungeonId
+    ) external view returns (Asset[] memory assets) {
         return _dungeonLinkedAssets[dungeonId];
     }
 
@@ -331,7 +429,9 @@ contract DungeonMOW is ERC721 {
      * @dev Get details of a specific dungeon.
      * @param dungeonId ID of the dungeon.
      */
-    function getDungeonDetails(uint256 dungeonId) external view returns (Dungeon memory) {
+    function getDungeonDetails(
+        uint256 dungeonId
+    ) external view returns (Dungeon memory) {
         if (ownerOf(dungeonId) == address(0)) revert DungeonDoesNotExist();
         return _dungeons[dungeonId];
     }
@@ -340,7 +440,11 @@ contract DungeonMOW is ERC721 {
      * @dev Get details of all available dungeons.
      * @return dungeons Array of all available dungeons.
      */
-    function getAllDungeons() external view returns (Dungeon[] memory dungeons) {
+    function getAllDungeons()
+        external
+        view
+        returns (Dungeon[] memory dungeons)
+    {
         uint256 totalDungeons = _nextTokenId;
         dungeons = new Dungeon[](totalDungeons);
         uint256 index = 0;
@@ -353,6 +457,8 @@ contract DungeonMOW is ERC721 {
         }
 
         // Resize the array to fit the actual number of dungeons
-        assembly { mstore(dungeons, index) }
+        assembly {
+            mstore(dungeons, index)
+        }
     }
 }

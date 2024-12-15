@@ -415,4 +415,64 @@ contract DungeonTest is Test {
         assertEq(sword.ownerOf(swordId), address(dungeonMOW));
         assertEq(dungeonMOW.dungeonTokenOwners(address(sword), swordId, dungeonId), SWORD_OWNER);
     }
+
+    function testDeleteDungeon() public {
+        // Setup
+        string memory mapHash = "QmHash123";
+        string memory dbUrl = "https://example.com/db";
+        uint256 dungeonId = 0;
+
+        // Create dungeon
+        vm.prank(USER);
+        dungeonMOW.createDungeon(mapHash, dbUrl);
+
+        // Import some items to the dungeon
+        vm.startPrank(SWORD_OWNER);
+        sword.approve(address(dungeonMOW), swordId);
+        dungeonMOW.importItem(dungeonId, address(sword), swordId);
+        vm.stopPrank();
+
+        vm.startPrank(POTION_OWNER);
+        potion.approve(address(dungeonMOW), potionId);
+        dungeonMOW.importItem(dungeonId, address(potion), potionId);
+        vm.stopPrank();
+
+        // Verify initial state
+        assertEq(dungeonMOW.ownerOf(dungeonId), USER);
+        assertEq(sword.ownerOf(swordId), address(dungeonMOW));
+        assertEq(potion.ownerOf(potionId), address(dungeonMOW));
+
+        // Delete dungeon
+        vm.prank(USER);
+        dungeonMOW.deleteDungeon(dungeonId);
+
+        // Verify:
+        // 1. Dungeon NFT is deleted
+        vm.expectRevert(); // Should revert when trying to get owner of burned token
+        dungeonMOW.ownerOf(dungeonId);
+
+        // 2. Imported items are returned to their original owners
+        assertEq(sword.ownerOf(swordId), SWORD_OWNER);
+        assertEq(potion.ownerOf(potionId), POTION_OWNER);
+
+        // 3. Dungeon data is cleaned up
+        assertEq(dungeonMOW.dungeonTokenOwners(address(sword), swordId, dungeonId), address(0));
+        assertEq(dungeonMOW.dungeonTokenOwners(address(potion), potionId, dungeonId), address(0));
+    }
+
+    function testDeleteDungeonNotOwner() public {
+        // Setup
+        string memory mapHash = "QmHash123";
+        string memory dbUrl = "https://example.com/db";
+        uint256 dungeonId = 0;
+
+        // Create dungeon as USER
+        vm.prank(USER);
+        dungeonMOW.createDungeon(mapHash, dbUrl);
+
+        // Try to burn dungeon as non-owner
+        vm.prank(USER2);
+        vm.expectRevert(DungeonMOW.NotDungeonOwner.selector);
+        dungeonMOW.deleteDungeon(dungeonId);
+    }
 }
